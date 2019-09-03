@@ -74,7 +74,7 @@ helps['asc app update'] = """
 
 helps['asc app delete'] = """
     type: command
-    short-summary: Delete an app in the Spring cloud service.
+    short-summary: Delete an app from the Spring cloud service.
 """
 
 helps['asc app list'] = """
@@ -89,22 +89,22 @@ helps['asc app show'] = """
 
 helps['asc app start'] = """
     type: command
-    short-summary: Start instances of the app, default to in production deployment.
+    short-summary: Start instances of the app, default to production deployment.
 """
 
 helps['asc app stop'] = """
     type: command
-    short-summary: Stop instances of the app, default to in production deployment.
+    short-summary: Stop instances of the app, default to production deployment.
 """
 
 helps['asc app restart'] = """
     type: command
-    short-summary: Restart instances of the app, default to in production deployment.
+    short-summary: Restart instances of the app, default to production deployment.
 """
 
 helps['asc app deploy'] = """
     type: command
-    short-summary: Deploy source code or built binary to an app and update related configurations.
+    short-summary: Deploy source code or pre-built binary to an app and update related configurations.
     examples:
     - name: Deploy source code to an app. This will pack current directory, build binary with Pivotal Build Service and then deploy to the app.
       text: az asc app deploy -n MyApp -s Myasc
@@ -126,12 +126,12 @@ helps['asc app scale'] = """
 
 helps['asc app show-deploy-log'] = """
     type: command
-    short-summary: Show a specificed deployment's log of the app, default to in production deployment.
+    short-summary: Show a specificed deployment's log of the app, default to production deployment.
 """
 
 helps['asc app set-deployment'] = """
     type: command
-    short-summary: Set in production deployment of an app.
+    short-summary: Set production deployment of an app.
     examples:
     - name: Swap a staging deployment of an app to production.
       text: az asc app set-deployment -d green-deployment -n MyApp -s Myasc
@@ -139,7 +139,7 @@ helps['asc app set-deployment'] = """
 
 helps['asc app deployment'] = """
     type: group
-    short-summary: Commands to manage deployments of an app in Spring cloud service.
+    short-summary: Commands to manage life cycle of deployments of an app in Spring cloud service. More operations on deployments can be done on app level with parameter --deployment. e.g. az asc app deploy --deployment <staging deployment>
 """
 
 helps['asc app deployment list'] = """
@@ -159,7 +159,7 @@ helps['asc app deployment delete'] = """
 
 helps['asc app deployment create'] = """
     type: command
-    short-summary: Create a staging deployment for the app.
+    short-summary: Create a staging deployment for the app. To deploy code or update setting to an existing deployment, use: az asz app deploy/update --deployment <staging deployment>
     examples:
     - name: Deploy source code to a new deployment of an app. This will pack current directory, build binary with Pivotal Build Service and then deploy.
       text: az asc app deployment create -n green-deployment --app MyApp -s Myasc
