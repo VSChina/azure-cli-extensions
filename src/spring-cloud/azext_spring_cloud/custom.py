@@ -24,11 +24,11 @@ from ._utils import _get_rg_location
 logger = get_logger(__name__)
 DEFAULT_DEPLOYMENT_NAME = "default"
 DEPLOYMENT_CREATE_OR_UPDATE_SLEEP_INTERVAL = 5
-APP__CREATE_OR_UPDATE_SLEEP_INTERVAL = 2
+APP_CREATE_OR_UPDATE_SLEEP_INTERVAL = 2
 
 # pylint: disable=line-too-long
 NO_PRODUCTION_DEPLOYMENT_ERROR = "No production deployment found, use --deployment to specify deployment or create deployment with: az spring-cloud app deployment create"
-
+LOG_RUNNING_PROMPT = "This command usually takes minutes to run, add '--verbose' parameter to improve verbosity if needed."
 
 def spring_cloud_create(cmd, client, resource_group, name, location=None, no_wait=False):
     rg_location = _get_rg_location(cmd.cli_ctx, resource_group)
@@ -94,10 +94,14 @@ def app_create(cmd, client, resource_group, service, name,
                jvm_options=None,
                env=None,
                enable_persistent_storage=None):
+    import sys
+    print('\r666', end="")
+    print('\r666', end="")
+    print('\r666', end="")
     apps = _get_all_apps(client, resource_group, service)
     if name in apps:
         raise CLIError("App {} already exists.".format(name))
-    logger.info("Creating app with name {}".format(name))
+    print("\r Creating app with name {}".format(name), end="")
     properties = models.AppResourceProperties()
     if enable_persistent_storage:
         properties.persistent_disk = models.PersistentDisk(
@@ -110,9 +114,9 @@ def app_create(cmd, client, resource_group, service, name,
         size_in_gb=5, mount_path="/tmp")
 
     poller = client.apps.create_or_update(resource_group, service, name, properties)
-    logger.info("Waiting for the app {} create completion".format(name))
+    print("\r Waiting for the app {} create completion".format(name), end="")
     while poller.done() is False:
-        sleep(APP__CREATE_OR_UPDATE_SLEEP_INTERVAL)
+        sleep(APP_CREATE_OR_UPDATE_SLEEP_INTERVAL)
 
     deployment_settings = models.DeploymentSettings(
         cpu=cpu,
@@ -128,16 +132,16 @@ def app_create(cmd, client, resource_group, service, name,
         source=user_source_info)
 
     # create default deployment
-    logger.info("Creating default deployment with name {}".format(DEFAULT_DEPLOYMENT_NAME))
+    print("\r Creating default deployment with name {}".format(DEFAULT_DEPLOYMENT_NAME), end="")
     poller = client.deployments.create_or_update(
         resource_group, service, name, DEFAULT_DEPLOYMENT_NAME, properties)
 
-    logger.info("Setting default deployment to production")
+    print("\r Setting default deployment to production", end="")
     properties = models.AppResourceProperties(
         active_deployment_name=DEFAULT_DEPLOYMENT_NAME, public=is_public)
 
     app_poller = client.apps.update(resource_group, service, name, properties)
-    logger.info("Waiting for the deployment {} create and app {} update completion".format(DEFAULT_DEPLOYMENT_NAME, name))
+    print("\r Waiting for the deployment '{}' create and app '{}' update completion".format(DEFAULT_DEPLOYMENT_NAME, name), end="")
     while not poller.done() or not app_poller.done():
         sleep(DEPLOYMENT_CREATE_OR_UPDATE_SLEEP_INTERVAL)
 
@@ -162,12 +166,12 @@ def app_update(cmd, client, resource_group, service, name,
     if enable_persistent_storage is False:
         properties.persistent_disk = models.PersistentDisk(size_in_gb=0)
 
-    logger.info("updating app {}".format(name))
+    logger.warning("updating app {}".format(name))
     poller = client.apps.update(
         resource_group, service, name, properties)
-    logger.info("Waiting for the app {} update completion".format(name))
+    logger.warning("Waiting for the app '{}' update completion".format(name))
     while poller.done() is False:
-        sleep(APP__CREATE_OR_UPDATE_SLEEP_INTERVAL)
+        sleep(APP_CREATE_OR_UPDATE_SLEEP_INTERVAL)
 
     app_updated = client.apps.get(resource_group, service, name)
 
@@ -177,7 +181,7 @@ def app_update(cmd, client, resource_group, service, name,
         if deployment is None:
             return app_updated
 
-    logger.info("Updating deployment {}".format(deployment))
+    logger.warning("Updating deployment {}".format(deployment))
     deployment_settings = models.DeploymentSettings(
         cpu=None,
         memory_in_gb=None,
@@ -188,7 +192,7 @@ def app_update(cmd, client, resource_group, service, name,
     properties = models.DeploymentResourceProperties(
         deployment_settings=deployment_settings)
     poller = client.deployments.update(resource_group, service, name, deployment, properties)
-    logger.info("Waiting for the deployment {} update completion".format(deployment))
+    logger.warning("Waiting for the deployment '{}' update completion".format(deployment))
     while poller.done() is False:
         sleep(DEPLOYMENT_CREATE_OR_UPDATE_SLEEP_INTERVAL)
 
@@ -291,6 +295,7 @@ def app_deploy(cmd, client, resource_group, service, name,
                instance_count=None,
                env=None,
                no_wait=False):
+    logger.warning(LOG_RUNNING_PROMPT)
     if deployment is None:
         deployment = client.apps.get(
             resource_group, service, name).properties.active_deployment_name
@@ -341,7 +346,7 @@ def app_scale(cmd, client, resource_group, service, name,
                        resource_group, service, name, deployment, properties)
 
 
-def app_get_log(cmd, client, resource_group, service, name, deployment=None):
+def app_get_build_log(cmd, client, resource_group, service, name, deployment=None):
     if deployment is None:
         deployment = client.apps.get(
             resource_group, service, name).properties.active_deployment_name
@@ -352,6 +357,30 @@ def app_get_log(cmd, client, resource_group, service, name, deployment=None):
     if deployment_properties.source.type == "Jar":
         raise CLIError("Jar deployment have no build logs.")
     return stream_logs(client.deployments, resource_group, service, name, deployment)
+
+
+def app_tail_log(cmd, client, resource_group, service, name, instance=None, follow=False, lines=None, since=None, limit=None):
+    if not instance:
+        deployment_name = client.apps.get(resource_group, service, name).properties.active_deployment_name
+        if not deployment_name:
+            raise CLIError("No production deployment found for app {}".format(name))
+        deployment = client.deployments.get(resource_group, service, name, deployment_name)
+        if not deployment.properties.instances:
+            raise CLIError("No instances found for deployment {0} in app {1}".format(deployment_name, name))
+        instance = deployment.properties.instances[0].name
+
+    from threading import Thread
+    primary_key = client.services.list_test_keys(resource_group, service).primary_key
+    streaming_url = "https://{0}.asc-test.net/api/logstream/instance/{1}".format(service, instance)
+    if follow:
+        streaming_url = "{}?follow=true".format(streaming_url)
+    print(streaming_url)
+    t = Thread(target=_get_app_log, args=(streaming_url, "primary", primary_key))
+    t.daemon = True
+    t.start()
+
+    while t.is_alive():
+        sleep(10)  # so that ctrl+c can stop the command
 
 
 def app_set_deployment(cmd, client, resource_group, service, name, deployment):
@@ -381,6 +410,7 @@ def deployment_create(cmd, client, resource_group, service, app, name,
                       instance_count=None,
                       env=None,
                       no_wait=False):
+    logger.warning(LOG_RUNNING_PROMPT)
     deployments = _get_all_deployments(client, resource_group, service, app)
     if name in deployments:
         raise CLIError("Deployment " + name + " already exists")
@@ -882,6 +912,7 @@ def _app_deploy(client, resource_group, service, app, name, version, path, runti
                 no_wait=False,
                 file_type="Jar",
                 update=False):
+    from threading import Timer
     upload_url = None
     relative_path = None
     try:
@@ -923,7 +954,33 @@ def _app_deploy(client, resource_group, service, app, name, version, path, runti
     # upload file
     file_service = FileService(storage_name, sas_token=sas_token)
     file_service.create_file_from_path(share_name, None, relative_path, path)
-    logger.info("Upload file succeed, start to update deployment.")
+    logger.warning("Upload file succeed, start to update deployment.")
+
+    if file_type == "Source" and ~no_wait:
+        def get_log_url():
+            try:
+                log_url = client.deployments.get_log_file_url(
+                    resource_group_name=resource_group,
+                    service_name=service,
+                    app_name=app,
+                    deployment_name=name).url
+                return log_url
+            except:
+                return None
+
+        def get_logs_loop():
+            old_log_url = get_log_url()
+            log_url = None
+            while not log_url or log_url == old_log_url:
+                log_url = get_log_url()
+                sleep(10)
+
+            logger.info("Trying to fetch build logs")
+            stream_logs(client.deployments, resource_group, service, app, name, logger_level_func=logger.info)
+
+        timer = Timer(3, get_logs_loop)
+        timer.daemon = True
+        timer.start()
 
     # create deployment
     if update:
@@ -932,3 +989,36 @@ def _app_deploy(client, resource_group, service, app, name, version, path, runti
 
     return sdk_no_wait(no_wait, client.deployments.create_or_update,
                        resource_group, service, app, name, properties)
+
+
+def _get_app_log(url, user_name, password):
+    import certifi
+    import urllib3
+    import sys
+    print(user_name)
+    print(password)
+    try:
+        import urllib3.contrib.pyopenssl
+        urllib3.contrib.pyopenssl.inject_into_urllib3()
+    except ImportError:
+        pass
+
+    http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=certifi.where())
+    headers = urllib3.util.make_headers(basic_auth='{0}:{1}'.format(user_name, password))
+    r = http.request(
+        'GET',
+        url,
+        headers=headers,
+        preload_content=False
+    )
+    if r.status != 200:
+        raise CLIError("Failed to connect to '{}' with status code '{}' and reason '{}'".format(
+            url, r.status, r.reason))
+    std_encoding = sys.stdout.encoding
+
+    for chunk in r.stream():
+        if chunk:
+            print(chunk.decode(encoding='utf-8', errors='replace')
+                    .encode(std_encoding, errors='replace')
+                    .decode(std_encoding, errors='replace'), end='')
+    r.release_conn()
