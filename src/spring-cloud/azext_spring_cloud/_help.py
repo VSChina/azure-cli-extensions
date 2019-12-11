@@ -142,6 +142,11 @@ helps['spring-cloud app show-deploy-log'] = """
     short-summary: Show build log of the last deploy, only apply to source code deploy, default to production deployment.
 """
 
+helps['spring-cloud app log tail'] = """
+    type: command
+    short-summary: Show logs of an app or a instance, logs will be streamed when set --follow.
+"""
+
 helps['spring-cloud app set-deployment'] = """
     type: command
     short-summary: Set production deployment of an app.

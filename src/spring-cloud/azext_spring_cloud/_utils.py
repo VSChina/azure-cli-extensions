@@ -30,7 +30,7 @@ def _get_upload_local_file(jar_path=None):
 
 
 def _pack_source_code(source_location, tar_file_path):
-    logger.warning("Packing source code into tar to upload...")
+    logger.info("Packing source code into tar to upload...")
 
     ignore_list, ignore_list_size = _load_gitignore_file(source_location)
     common_vcs_ignore_list = {'.git', '.gitignore', 'bzrignore', '.hg',
@@ -39,7 +39,7 @@ def _pack_source_code(source_location, tar_file_path):
     def _ignore_check(tarinfo, parent_ignored, parent_matching_rule_index):
         # ignore common vcs dir or file
         if tarinfo.name in common_vcs_ignore_list:
-            logger.warning(
+            logger.info(
                 "Excluding '%s' based on default ignore rules", tarinfo.name)
             return True, parent_matching_rule_index
 

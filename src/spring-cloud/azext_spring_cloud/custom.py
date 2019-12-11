@@ -20,6 +20,7 @@ from azure.cli.core.util import sdk_no_wait
 from ast import literal_eval
 from azure.cli.core.commands import cached_put
 from ._utils import _get_rg_location
+from urllib import parse
 
 logger = get_logger(__name__)
 DEFAULT_DEPLOYMENT_NAME = "default"
@@ -94,14 +95,10 @@ def app_create(cmd, client, resource_group, service, name,
                jvm_options=None,
                env=None,
                enable_persistent_storage=None):
-    import sys
-    print('\r666', end="")
-    print('\r666', end="")
-    print('\r666', end="")
     apps = _get_all_apps(client, resource_group, service)
     if name in apps:
         raise CLIError("App {} already exists.".format(name))
-    print("\r Creating app with name {}".format(name), end="")
+    logger.warning("Creating app with name {} [1/4]".format(name))
     properties = models.AppResourceProperties()
     if enable_persistent_storage:
         properties.persistent_disk = models.PersistentDisk(
@@ -114,7 +111,6 @@ def app_create(cmd, client, resource_group, service, name,
         size_in_gb=5, mount_path="/tmp")
 
     poller = client.apps.create_or_update(resource_group, service, name, properties)
-    print("\r Waiting for the app {} create completion".format(name), end="")
     while poller.done() is False:
         sleep(APP_CREATE_OR_UPDATE_SLEEP_INTERVAL)
 
@@ -132,16 +128,16 @@ def app_create(cmd, client, resource_group, service, name,
         source=user_source_info)
 
     # create default deployment
-    print("\r Creating default deployment with name {}".format(DEFAULT_DEPLOYMENT_NAME), end="")
+    logger.warning("Creating default deployment with name {} [2/4]".format(DEFAULT_DEPLOYMENT_NAME))
     poller = client.deployments.create_or_update(
         resource_group, service, name, DEFAULT_DEPLOYMENT_NAME, properties)
 
-    print("\r Setting default deployment to production", end="")
+    logger.warning("Setting default deployment to production [3/4]")
     properties = models.AppResourceProperties(
         active_deployment_name=DEFAULT_DEPLOYMENT_NAME, public=is_public)
 
     app_poller = client.apps.update(resource_group, service, name, properties)
-    print("\r Waiting for the deployment '{}' create and app '{}' update completion".format(DEFAULT_DEPLOYMENT_NAME, name), end="")
+    logger.warning("Updating app {}, this operation can take a while to complete. [4/4]".format(name))
     while not poller.done() or not app_poller.done():
         sleep(DEPLOYMENT_CREATE_OR_UPDATE_SLEEP_INTERVAL)
 
@@ -166,22 +162,23 @@ def app_update(cmd, client, resource_group, service, name,
     if enable_persistent_storage is False:
         properties.persistent_disk = models.PersistentDisk(size_in_gb=0)
 
-    logger.warning("updating app {}".format(name))
+    logger.warning("updating app {} [1/2]".format(name))
     poller = client.apps.update(
         resource_group, service, name, properties)
-    logger.warning("Waiting for the app '{}' update completion".format(name))
     while poller.done() is False:
         sleep(APP_CREATE_OR_UPDATE_SLEEP_INTERVAL)
 
     app_updated = client.apps.get(resource_group, service, name)
 
+    logger.warning("Checking if any deployment need to update")
     if deployment is None:
         deployment = client.apps.get(
             resource_group, service, name).properties.active_deployment_name
         if deployment is None:
+            logger.warning("No deployment found for update")
             return app_updated
 
-    logger.warning("Updating deployment {}".format(deployment))
+    logger.warning("Updating deployment {} [2/2]".format(deployment))
     deployment_settings = models.DeploymentSettings(
         cpu=None,
         memory_in_gb=None,
@@ -192,7 +189,6 @@ def app_update(cmd, client, resource_group, service, name,
     properties = models.DeploymentResourceProperties(
         deployment_settings=deployment_settings)
     poller = client.deployments.update(resource_group, service, name, deployment, properties)
-    logger.warning("Waiting for the deployment '{}' update completion".format(deployment))
     while poller.done() is False:
         sleep(DEPLOYMENT_CREATE_OR_UPDATE_SLEEP_INTERVAL)
 
@@ -296,10 +292,10 @@ def app_deploy(cmd, client, resource_group, service, name,
                env=None,
                no_wait=False):
     logger.warning(LOG_RUNNING_PROMPT)
-    if deployment is None:
+    if not deployment:
         deployment = client.apps.get(
             resource_group, service, name).properties.active_deployment_name
-        if deployment is None:
+        if not deployment:
             raise CLIError(NO_PRODUCTION_DEPLOYMENT_ERROR)
 
     client.deployments.get(resource_group, service, name, deployment)
@@ -359,7 +355,7 @@ def app_get_build_log(cmd, client, resource_group, service, name, deployment=Non
     return stream_logs(client.deployments, resource_group, service, name, deployment)
 
 
-def app_tail_log(cmd, client, resource_group, service, name, instance=None, follow=False, lines=None, since=None, limit=None):
+def app_tail_log(cmd, client, resource_group, service, name, instance=None, follow=False, lines=50, since=None, limit=2048):
     if not instance:
         deployment_name = client.apps.get(resource_group, service, name).properties.active_deployment_name
         if not deployment_name:
@@ -372,15 +368,21 @@ def app_tail_log(cmd, client, resource_group, service, name, instance=None, foll
     from threading import Thread
     primary_key = client.services.list_test_keys(resource_group, service).primary_key
     streaming_url = "https://{0}.asc-test.net/api/logstream/instance/{1}".format(service, instance)
+    params = {}
+    params["tailLines"] = lines
+    params["limitBytes"] = limit
+    if since:
+        params["sinceSeconds"] = since
     if follow:
-        streaming_url = "{}?follow=true".format(streaming_url)
-    print(streaming_url)
+        params["follow"] = True
+
+    streaming_url += "?{}".format(parse.urlencode(params)) if params else ""
     t = Thread(target=_get_app_log, args=(streaming_url, "primary", primary_key))
     t.daemon = True
     t.start()
 
     while t.is_alive():
-        sleep(10)  # so that ctrl+c can stop the command
+        sleep(5)  # so that ctrl+c can stop the command
 
 
 def app_set_deployment(cmd, client, resource_group, service, name, deployment):
@@ -915,6 +917,7 @@ def _app_deploy(client, resource_group, service, app, name, version, path, runti
     from threading import Timer
     upload_url = None
     relative_path = None
+    logger.warning("Requesting for upload url [1/3].")
     try:
         response = client.apps.get_resource_upload_url(resource_group,
                                                        service,
@@ -952,9 +955,9 @@ def _app_deploy(client, resource_group, service, app, name, version, path, runti
         source=user_source_info)
 
     # upload file
+    logger.warning("Uploading package to blob [2/3].")
     file_service = FileService(storage_name, sas_token=sas_token)
     file_service.create_file_from_path(share_name, None, relative_path, path)
-    logger.warning("Upload file succeed, start to update deployment.")
 
     if file_type == "Source" and ~no_wait:
         def get_log_url():
@@ -983,6 +986,7 @@ def _app_deploy(client, resource_group, service, app, name, version, path, runti
         timer.start()
 
     # create deployment
+    logger.warning("Creating deployment in app {}, this operation can take a while to complete [3/3].".format(app))
     if update:
         return sdk_no_wait(no_wait, client.deployments.update,
                            resource_group, service, app, name, properties)
@@ -995,8 +999,6 @@ def _get_app_log(url, user_name, password):
     import certifi
     import urllib3
     import sys
-    print(user_name)
-    print(password)
     try:
         import urllib3.contrib.pyopenssl
         urllib3.contrib.pyopenssl.inject_into_urllib3()

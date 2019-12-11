@@ -93,3 +93,28 @@ def validate_nodes_count(namespace):
     if namespace.instance_count is not None:
         if namespace.instance_count < 1 or namespace.instance_count > 20:
             raise CLIError('--instance-count must be in the range [1,20]')
+
+
+def validate_log_limit(namespace):
+    try:
+        namespace.limit = min(int(namespace.limit), 2048) * 1024
+    except:
+        raise CLIError('--limit must contains only digit')
+
+
+def validate_log_lines(namespace):
+    try:
+        namespace.lines = min(int(namespace.lines), 10000)
+    except:
+        raise CLIError('--lines must contains only digit')
+
+
+def validate_log_since(namespace):
+    if namespace.since:
+        last = namespace.since[-1:]
+        try:
+            namespace.since = int(namespace.since[:-1]) if last in ("hms") else int(namespace.since)
+        except:
+            raise CLIError("--since contains invalid characters")
+        namespace.since *= 60 if last == "m" else 1
+        namespace.since *= 3600 if last == "h" else 1
