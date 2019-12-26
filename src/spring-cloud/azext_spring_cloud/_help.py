@@ -155,6 +155,13 @@ helps['spring-cloud app set-deployment'] = """
       text: az spring-cloud app set-deployment -d green-deployment -n MyApp -s MyCluster -g MyResourceGroup
 """
 
+
+helps['spring-cloud app log'] = """
+    type: group
+    short-summary: Commands to tail app instances logs with multiple options. If the app has only one instance, the instance name is optional.
+"""
+
+
 helps['spring-cloud app deployment'] = """
     type: group
     short-summary: Commands to manage life cycle of deployments of an app in Azure Spring Cloud. More operations on deployments can be done on app level with parameter --deployment. e.g. az spring-cloud app deploy --deployment <staging deployment>

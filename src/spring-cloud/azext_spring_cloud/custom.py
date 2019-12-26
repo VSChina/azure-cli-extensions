@@ -363,7 +363,13 @@ def app_tail_log(cmd, client, resource_group, service, name, instance=None, foll
         deployment = client.deployments.get(resource_group, service, name, deployment_name)
         if not deployment.properties.instances:
             raise CLIError("No instances found for deployment {0} in app {1}".format(deployment_name, name))
-        instance = deployment.properties.instances[0].name
+        instances = deployment.properties.instances
+        if len(instances) > 1:
+            for instance in instances:
+                print("{}".format(instance.name))
+            print("Please specify the instance name to view the log")
+            return None
+        instance = instances[0].name
 
     from threading import Thread
     primary_key = client.services.list_test_keys(resource_group, service).primary_key
@@ -376,13 +382,17 @@ def app_tail_log(cmd, client, resource_group, service, name, instance=None, foll
     if follow:
         params["follow"] = True
 
+    A = []
     streaming_url += "?{}".format(parse.urlencode(params)) if params else ""
-    t = Thread(target=_get_app_log, args=(streaming_url, "primary", primary_key))
+    t = Thread(target=_get_app_log, args=(streaming_url, "primary", primary_key, A))
     t.daemon = True
     t.start()
 
     while t.is_alive():
         sleep(5)  # so that ctrl+c can stop the command
+
+    if A:
+        raise A[0]
 
 
 def app_set_deployment(cmd, client, resource_group, service, name, deployment):
@@ -995,7 +1005,7 @@ def _app_deploy(client, resource_group, service, app, name, version, path, runti
                        resource_group, service, app, name, properties)
 
 
-def _get_app_log(url, user_name, password):
+def _get_app_log(url, user_name, password, A):
     import certifi
     import urllib3
     import sys
@@ -1013,14 +1023,17 @@ def _get_app_log(url, user_name, password):
         headers=headers,
         preload_content=False
     )
-    if r.status != 200:
-        raise CLIError("Failed to connect to '{}' with status code '{}' and reason '{}'".format(
-            url, r.status, r.reason))
-    std_encoding = sys.stdout.encoding
+    try:
+        if r.status != 200:
+            raise CLIError("Failed to connect to '{}' with status code '{}' and reason '{}'".format(
+                url, r.status, r.reason))
+        std_encoding = sys.stdout.encoding
 
-    for chunk in r.stream():
-        if chunk:
-            print(chunk.decode(encoding='utf-8', errors='replace')
-                    .encode(std_encoding, errors='replace')
-                    .decode(std_encoding, errors='replace'), end='')
-    r.release_conn()
+        for chunk in r.stream():
+            if chunk:
+                print(chunk.decode(encoding='utf-8', errors='replace')
+                        .encode(std_encoding, errors='replace')
+                        .decode(std_encoding, errors='replace'), end='')
+        r.release_conn()
+    except Exception as e:
+        A.append(e)
